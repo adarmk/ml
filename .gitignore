@@ -1,0 +1,10 @@
+# Ignoring executables
+*
+!*.*
+!*/
+
+.DS_Store
+*.dSYM
+classifier
+mnist_*.txt
+mnist_*.bin
