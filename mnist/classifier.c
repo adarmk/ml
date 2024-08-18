@@ -4,13 +4,14 @@
 #include <math.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 
 const unsigned int IN_LAYER_LEN = 784;
 const unsigned int H1_LEN = 128;
 const unsigned int H2_LEN = 128; 
 const unsigned int OUT_LAYER_LEN = 10; 
 
-const unsigned int BATCH_SIZE = 10;
+const unsigned int BATCH_SIZE = 32;
 const unsigned int EPOCHS = 20;
 const float LEARNING_RATE = 0.05;
 
@@ -140,8 +141,9 @@ Matrix mat_add(Matrix a, Matrix b) {
     if (a.rows != b.rows || a.cols != b.cols) {
         printf("Matrix a dimensions: %u rows, %u cols\n", a.rows, a.cols);
         printf("Matrix b dimensions: %u rows, %u cols\n", b.rows, b.cols);
-        fprintf(stderr, "Error: Both matrices must have identical dimensions for matrix addition.\n");
-        exit(EXIT_FAILURE);
+        // fprintf(stderr, "Error: Both matrices must have identical dimensions for matrix addition.\n");
+        // exit(EXIT_FAILURE);
+        assert(0 && "Error: Both matrices must have identical dimensions for matrix addition.\n");
     }
 
     Matrix result = alloc_mat(a.rows, a.cols);
@@ -292,9 +294,10 @@ float mse(Matrix predicted, Matrix actual) {
 }
 
 // input expected to be a 784x1 matrix
-// TODO: There's definitely unfreed memory here
 void feed_forward(Matrix input, Matrix w1, Matrix b1, Matrix w2, Matrix b2, Matrix w3, Matrix b3, Matrix *z1, Matrix *z2, Matrix *z3, Matrix *a1, Matrix *a2, Matrix *a3) {
+    
     Matrix prod = mat_mul(w1, input);
+
     *z1 = mat_add(prod, b1);
     free_mat(prod);
     
@@ -354,22 +357,15 @@ void train_batch(
     for (unsigned int i = 0; i < BATCH_SIZE; i++) {
         if (start_idx + i >= num_examples) {
             break;
-        }
-
-        if (start_idx >= 60000) {
-            printf("here1\n");
-        }
+        } 
 
         Matrix training_input = training_inputs[start_idx + i];
         Matrix training_output = training_outputs[start_idx + i];
 
         Matrix z1, a1, z2, a2, z3, a3;
-
+        
         feed_forward(training_input, *w1, *b1, *w2, *b2, *w3, *b3, &z1,&z2, &z3, &a1, &a2, &a3);
 
-        if (start_idx >= 60000) {
-            printf("here2\n");
-        }
         // Calculate loss every 1000 training examples
         if ((start_idx + i + 1) % 1000 == 0) {
             float loss = mse(a3, training_output);
@@ -381,10 +377,6 @@ void train_batch(
         Matrix sigma_prime_z = elementwise_sigmoid_prime(z3); // Vector of derivatives of sigmoid for each of the weighted inputs to each neuron in last layer
         Matrix d3 = hadamard_product(cost_pd, sigma_prime_z);
         
-        if (start_idx >= 60000) {
-            printf("here3\n");
-        }
-
         free_mat(cost_pd);
         free_mat(sigma_prime_z);
 
@@ -402,10 +394,6 @@ void train_batch(
         batch_d3[i] = d3;
     }
 
-    if (start_idx >= 60000) {
-        printf("here4\n");
-    }
-
     // Calculating batch-average of partial derivatives for each set of weights
     Matrix a0_t = transpose(training_inputs[start_idx]);
     Matrix w_pds1 = mat_mul(batch_d1[0], a0_t);
@@ -420,10 +408,8 @@ void train_batch(
     free_mat(a2_t);
     
     // Updating weights
-    if (start_idx >= 60000) {
-        printf("here5\n");
-    }
     for (unsigned int i = 1; i < BATCH_SIZE; i++) {
+  
         Matrix a0_t = transpose(training_inputs[start_idx + i]);
         Matrix pd1 = mat_mul(batch_d1[i], a0_t);
         mat_add_mut(&w_pds1, pd1);
@@ -560,7 +546,9 @@ int main() {
     load_mnist_data("mnist_train.txt", &train_outputs, &train_inputs, &num_train_examples);
 
     unsigned int start_idx = 0;
+    num_train_examples = 60000;
     for (unsigned int epoch = 0; epoch < EPOCHS; epoch++) {
+
         while (start_idx < num_train_examples) {
             train_batch(start_idx, num_train_examples, train_inputs, train_outputs, &w1, &b1, &w2, &b2, &w3, &b3);
             start_idx += BATCH_SIZE;
