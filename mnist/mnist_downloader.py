@@ -11,7 +11,7 @@ with open('mnist_train.txt', 'w') as f:
         img_str = ','.join(str(pixel) for row in img for pixel in row)
         f.write(f'{label} {img_str}\n')
 
-# Save test data to file
+# Save test data to text file
 with open('mnist_test.txt', 'w') as f:
     for label, img in zip(y_test, x_test):
         img_str = ','.join(str(pixel) for row in img for pixel in row)

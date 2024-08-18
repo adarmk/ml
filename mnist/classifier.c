@@ -10,9 +10,9 @@ const unsigned int H1_LEN = 128;
 const unsigned int H2_LEN = 128; 
 const unsigned int OUT_LAYER_LEN = 10; 
 
-const unsigned int BATCH_SIZE = 32;
+const unsigned int BATCH_SIZE = 10;
 const unsigned int EPOCHS = 20;
-const float LEARNING_RATE = 0.01;
+const float LEARNING_RATE = 0.05;
 
 // Matrix math 
 typedef struct {
@@ -138,6 +138,8 @@ Matrix zero_vector(unsigned int n) {
 
 Matrix mat_add(Matrix a, Matrix b) {
     if (a.rows != b.rows || a.cols != b.cols) {
+        printf("Matrix a dimensions: %u rows, %u cols\n", a.rows, a.cols);
+        printf("Matrix b dimensions: %u rows, %u cols\n", b.rows, b.cols);
         fprintf(stderr, "Error: Both matrices must have identical dimensions for matrix addition.\n");
         exit(EXIT_FAILURE);
     }
@@ -189,6 +191,8 @@ Matrix mat_sub(Matrix a, Matrix b) {
 
 void mat_sub_mut(Matrix *a, Matrix b) {
     if (a->rows != b.rows || a->cols != b.cols) {
+        printf("Matrix a dimensions: %u x %u\n", a->rows, a->cols);
+        printf("Matrix b dimensions: %u x %u\n", b.rows, b.cols);
         fprintf(stderr, "Error: Both matrices must have identical dimensions for in-place matrix subtraction.\n");
         exit(EXIT_FAILURE);
     }
@@ -213,6 +217,7 @@ void scale_mat(Matrix *m, float scalar) {
 void print_matrix(Matrix m) {
     for (unsigned int i = 0; i < m.rows; i++) {
         for (unsigned int j = 0; j < m.cols; j++) {
+            printf("(%u, %u) ", i, j);
             printf("%f ", m.data[i * m.cols + j]);
         }
         printf("\n");
@@ -288,30 +293,31 @@ float mse(Matrix predicted, Matrix actual) {
 
 // input expected to be a 784x1 matrix
 // TODO: There's definitely unfreed memory here
-void feed_forward(Matrix input, Matrix w1, Matrix b1, Matrix w2, Matrix b2, Matrix w3, Matrix b3, Matrix z1, Matrix z2, Matrix z3, Matrix a1, Matrix a2, Matrix a3) {
+void feed_forward(Matrix input, Matrix w1, Matrix b1, Matrix w2, Matrix b2, Matrix w3, Matrix b3, Matrix *z1, Matrix *z2, Matrix *z3, Matrix *a1, Matrix *a2, Matrix *a3) {
     Matrix prod = mat_mul(w1, input);
-    z1 = mat_add(prod, b1);
+    *z1 = mat_add(prod, b1);
     free_mat(prod);
     
-    a1 = elementwise_sigmoid(z1);
+    *a1 = elementwise_sigmoid(*z1);
 
-    Matrix prod2 = mat_mul(w2, a1);
-    z2 = mat_add(prod2, b2);
+    Matrix prod2 = mat_mul(w2, *a1);
+    *z2 = mat_add(prod2, b2);
     free_mat(prod2);
 
-    a2 = elementwise_sigmoid(z2);
+    *a2 = elementwise_sigmoid(*z2);
 
-    Matrix prod3 = mat_mul(w3, a2);
-    z3 = mat_add(prod3, b3);
+    Matrix prod3 = mat_mul(w3, *a2);
+    *z3 = mat_add(prod3, b3);
     free_mat(prod3);
 
-    a3 = elementwise_sigmoid(z3);
+    *a3 = elementwise_sigmoid(*z3);
 }
 
 // This is the backpropagation step
 Matrix calculate_delta(Matrix w, Matrix d_next, Matrix z) {
     Matrix w_t = transpose(w);
     Matrix backwards_error = mat_mul(w_t, d_next);
+
     Matrix sigma_prime_z = elementwise_sigmoid_prime(z);
     Matrix delta = hadamard_product(backwards_error, sigma_prime_z);
 
@@ -328,14 +334,13 @@ void train_batch(
     unsigned int num_examples, 
     Matrix *training_inputs, 
     Matrix *training_outputs, 
-    Matrix w1, 
-    Matrix b1, 
-    Matrix w2, 
-    Matrix b2, 
-    Matrix w3, 
-    Matrix b3
+    Matrix *w1, 
+    Matrix *b1, 
+    Matrix *w2, 
+    Matrix *b2, 
+    Matrix *w3, 
+    Matrix *b3
 ) {
-
     Matrix batch_d1[BATCH_SIZE];
     Matrix batch_d2[BATCH_SIZE];
     Matrix batch_d3[BATCH_SIZE];
@@ -351,73 +356,102 @@ void train_batch(
             break;
         }
 
+        if (start_idx >= 60000) {
+            printf("here1\n");
+        }
+
         Matrix training_input = training_inputs[start_idx + i];
         Matrix training_output = training_outputs[start_idx + i];
 
         Matrix z1, a1, z2, a2, z3, a3;
 
-        feed_forward(training_input, w1, b1, w2, b2, w3, b3, z1, z2, z3, a1, a2, a3);
+        feed_forward(training_input, *w1, *b1, *w2, *b2, *w3, *b3, &z1,&z2, &z3, &a1, &a2, &a3);
 
+        if (start_idx >= 60000) {
+            printf("here2\n");
+        }
         // Calculate loss every 1000 training examples
         if ((start_idx + i + 1) % 1000 == 0) {
             float loss = mse(a3, training_output);
             printf("Loss after %u examples: %.4f\n", start_idx + i + 1, loss);
         }
-        
-        batch_a1[i] = a1;
-        batch_a2[i] = a2;
-        batch_a3[i] = a3;
 
         // Calculating deltas for final layer
         Matrix cost_pd = mat_sub(a3, training_output); // Vector of partial derivatives of cost function wrt to last layer
         Matrix sigma_prime_z = elementwise_sigmoid_prime(z3); // Vector of derivatives of sigmoid for each of the weighted inputs to each neuron in last layer
         Matrix d3 = hadamard_product(cost_pd, sigma_prime_z);
         
+        if (start_idx >= 60000) {
+            printf("here3\n");
+        }
+
         free_mat(cost_pd);
         free_mat(sigma_prime_z);
 
-        // Propagating the errors backwards
-        Matrix d2 = calculate_delta(w3, d3, z2);
-        Matrix d1 = calculate_delta(w2, d2, z1);
+        // Propagating the deltas backwards
+        Matrix d2 = calculate_delta(*w3, d3, z2);
+        Matrix d1 = calculate_delta(*w2, d2, z1);
 
-
-        // Adding deltas to batch arrays
+        // Adding deltas and activations to batch arrays
+        batch_a1[i] = a1;
+        batch_a2[i] = a2;
+        batch_a3[i] = a3;
+        
         batch_d1[i] = d1;
         batch_d2[i] = d2;
         batch_d3[i] = d3;
     }
 
-    // Calculating batch-average of partial derivatives for each set of weights
-
-    Matrix w_pds1 = mat_mul(batch_d1[0], batch_a1[0]);
-    Matrix w_pds2 = mat_mul(batch_d2[0], batch_a2[0]);
-    Matrix w_pds3 = mat_mul(batch_d3[0], batch_a3[0]);
-    
-    // Updating weights
-
-    for (unsigned int i = 1; i < BATCH_SIZE; i++) {
-        Matrix pd1 = mat_mul(batch_d1[i], batch_a1[i]);
-        mat_add_mut(&w_pds1, pd1);
-        free_mat(pd1);
-
-        Matrix pd2 = mat_mul(batch_d2[i], batch_a2[i]);
-        mat_add_mut(&w_pds2, pd2);
-        free_mat(pd2);
-
-        Matrix pd3 = mat_mul(batch_d3[i], batch_a3[i]);
-        mat_add_mut(&w_pds3, pd3);
-        free_mat(pd3);
+    if (start_idx >= 60000) {
+        printf("here4\n");
     }
 
-    float gradient_scalar = - LEARNING_RATE / BATCH_SIZE;
+    // Calculating batch-average of partial derivatives for each set of weights
+    Matrix a0_t = transpose(training_inputs[start_idx]);
+    Matrix w_pds1 = mat_mul(batch_d1[0], a0_t);
+    free_mat(a0_t);
+
+    Matrix a1_t = transpose(batch_a1[0]);
+    Matrix w_pds2 = mat_mul(batch_d2[0], a1_t);
+    free_mat(a1_t);
+
+    Matrix a2_t = transpose(batch_a2[0]);
+    Matrix w_pds3 = mat_mul(batch_d3[0], a2_t);
+    free_mat(a2_t);
+    
+    // Updating weights
+    if (start_idx >= 60000) {
+        printf("here5\n");
+    }
+    for (unsigned int i = 1; i < BATCH_SIZE; i++) {
+        Matrix a0_t = transpose(training_inputs[start_idx + i]);
+        Matrix pd1 = mat_mul(batch_d1[i], a0_t);
+        mat_add_mut(&w_pds1, pd1);
+        free_mat(pd1);
+        free_mat(a0_t);
+
+        Matrix a1_t = transpose(batch_a1[i]);
+        Matrix pd2 = mat_mul(batch_d2[i], a1_t);
+        mat_add_mut(&w_pds2, pd2);
+        free_mat(pd2);
+        free_mat(a1_t);
+
+        Matrix a2_t = transpose(batch_a2[i]);
+        Matrix pd3 = mat_mul(batch_d3[i], a2_t);
+        mat_add_mut(&w_pds3, pd3);
+        free_mat(pd3);
+        free_mat(a2_t);
+    }
+
+    float gradient_scalar = LEARNING_RATE / BATCH_SIZE;
 
     scale_mat(&w_pds1, gradient_scalar);
     scale_mat(&w_pds2, gradient_scalar);
     scale_mat(&w_pds3, gradient_scalar);
 
-    mat_sub_mut(&w1, w_pds1);
-    mat_sub_mut(&w2, w_pds2); 
-    mat_sub_mut(&w3, w_pds3);
+    mat_sub_mut(w1, w_pds1);
+    mat_sub_mut(w2, w_pds2); 
+    mat_sub_mut(w3, w_pds3);
 
     free_mat(w_pds1);
     free_mat(w_pds2);
@@ -438,13 +472,9 @@ void train_batch(
     scale_mat(&b_pds2, gradient_scalar);
     scale_mat(&b_pds3, gradient_scalar);
 
-    mat_sub_mut(&b1, b_pds1);
-    mat_sub_mut(&b2, b_pds2);
-    mat_sub_mut(&b3, b_pds3);
-
-    free_mat(b_pds1);
-    free_mat(b_pds2);
-    free_mat(b_pds3);
+    mat_sub_mut(b1, b_pds1);
+    mat_sub_mut(b2, b_pds2);
+    mat_sub_mut(b3, b_pds3);
 
     // Free batch_d1, batch_d2, batch_d3, batch_a1, batch_a2, batch_a3
     for (unsigned int i = 0; i < BATCH_SIZE; i++) {
@@ -532,13 +562,11 @@ int main() {
     unsigned int start_idx = 0;
     for (unsigned int epoch = 0; epoch < EPOCHS; epoch++) {
         while (start_idx < num_train_examples) {
-            train_batch(start_idx, num_train_examples, train_inputs, train_outputs, w1, b1, w2, b2, w3, b3);
+            train_batch(start_idx, num_train_examples, train_inputs, train_outputs, &w1, &b1, &w2, &b2, &w3, &b3);
             start_idx += BATCH_SIZE;
         }
         start_idx = 0;
     }
-
-    
 
     return 0;
 }
