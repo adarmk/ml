@@ -12,7 +12,7 @@ const unsigned int H2_LEN = 128;
 const unsigned int OUT_LAYER_LEN = 10; 
 
 const unsigned int BATCH_SIZE = 32;
-const unsigned int EPOCHS = 1;
+const unsigned int EPOCHS = 2;
 const float LEARNING_RATE = 0.02;
 
 // Matrix math 
@@ -119,7 +119,7 @@ Matrix rand_matrix(unsigned int rows, unsigned int cols) {
 
     for (unsigned int i = 0; i < rows; i++) {
         for (unsigned int j = 0; j < cols; j++) {
-            float random_value = ((float)rand() / RAND_MAX) * 0.02 - 0.01; // Generate random value between -0.01 and 0.01
+            float random_value = ((float)rand() / RAND_MAX) * 0.2 - 0.1; // Generate random value between -0.01 and 0.01
             unchecked_set_value(&mat, i, j, random_value);
         }
     }
@@ -228,20 +228,20 @@ void print_matrix(Matrix m) {
 
 // Activation functions
 
-float sigmoid(float x) {
-    return 1.0 / (1.0 + exp(-x));
-    // return x <= 0 ? 0 : x;
+float relu(float x) {
+    // return 1.0 / (1.0 + exp(-x));
+    return x <= 0 ? 0 : x;
 }
 
-float sigmoid_prime(float x) {
-    float s = sigmoid(x);
-    return s * (1 - s);
-    // return x <= 0 ? 0 : 1;
+float relu_prime(float x) {
+    // float s = sigmoid(x);
+    // return s * (1 - s);
+    return x <= 0 ? 0 : 1;
 }
 
-Matrix elementwise_sigmoid(Matrix vec) {
+Matrix elementwise_relu(Matrix vec) {
     if (vec.cols != 1) {
-        fprintf(stderr, "Error: Input must be an nx1 vector for element-wise sigmoid.\n");
+        fprintf(stderr, "Error: Input must be an nx1 vector for element-wise ReLU.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -249,16 +249,16 @@ Matrix elementwise_sigmoid(Matrix vec) {
 
     for (unsigned int i = 0; i < vec.rows; i++) {
         float value = unchecked_index(&vec, i, 0);
-        float sigmoid_value = sigmoid(value);
-        unchecked_set_value(&result, i, 0, sigmoid_value);
+        float relu_value = relu(value);
+        unchecked_set_value(&result, i, 0, relu_value);
     }
 
     return result;
 }
 
-Matrix elementwise_sigmoid_prime(Matrix vec) {
+Matrix elementwise_relu_prime(Matrix vec) {
     if (vec.cols != 1) {
-        fprintf(stderr, "Error: Input must be an nx1 vector for element-wise sigmoid prime.\n");
+        fprintf(stderr, "Error: Input must be an nx1 vector for element-wise ReLU prime.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -266,9 +266,8 @@ Matrix elementwise_sigmoid_prime(Matrix vec) {
 
     for (unsigned int i = 0; i < vec.rows; i++) {
         float value = unchecked_index(&vec, i, 0);
-        float sigmoid_value = sigmoid(value);
-        float sigmoid_prime_value = sigmoid_value * (1 - sigmoid_value);
-        unchecked_set_value(&result, i, 0, sigmoid_prime_value);
+        float relu_prime_value = relu_prime(value);
+        unchecked_set_value(&result, i, 0, relu_prime_value);
     }
 
     return result;
@@ -289,9 +288,10 @@ float mse(Matrix predicted, Matrix actual) {
         float err_value = unchecked_index(&error, i, 0);
         sum += err_value * err_value;
     }
-    unsigned int total_elements = error.rows;
+    
+    //unsigned int total_elements = error.rows;
 
-    return sum / (total_elements * 2);
+    return sum / 2;
 }
 
 // input expected to be a 784x1 matrix
@@ -302,19 +302,19 @@ void feed_forward(Matrix input, Matrix w1, Matrix b1, Matrix w2, Matrix b2, Matr
     *z1 = mat_add(prod, b1);
     free_mat(prod);
     
-    *a1 = elementwise_sigmoid(*z1);
+    *a1 = elementwise_relu(*z1);
 
     Matrix prod2 = mat_mul(w2, *a1);
     *z2 = mat_add(prod2, b2);
     free_mat(prod2);
 
-    *a2 = elementwise_sigmoid(*z2);
+    *a2 = elementwise_relu(*z2);
 
     Matrix prod3 = mat_mul(w3, *a2);
     *z3 = mat_add(prod3, b3);
     free_mat(prod3);
 
-    *a3 = elementwise_sigmoid(*z3);
+    *a3 = elementwise_relu(*z3);
 }
 
 // This is the backpropagation step
@@ -322,7 +322,7 @@ Matrix calculate_delta(Matrix w, Matrix d_next, Matrix z) {
     Matrix w_t = transpose(w);
     Matrix backwards_error = mat_mul(w_t, d_next);
 
-    Matrix sigma_prime_z = elementwise_sigmoid_prime(z);
+    Matrix sigma_prime_z = elementwise_relu_prime(z);
     Matrix delta = hadamard_product(backwards_error, sigma_prime_z);
 
     free_mat(w_t);
@@ -375,7 +375,7 @@ void train_batch(
 
         // Calculating deltas for final layer
         Matrix cost_pd = mat_sub(a3, training_output); // Vector of partial derivatives of cost function wrt to last layer
-        Matrix sigma_prime_z = elementwise_sigmoid_prime(z3); // Vector of derivatives of sigmoid for each of the weighted inputs to each neuron in last layer
+        Matrix sigma_prime_z = elementwise_relu_prime(z3); // Vector of derivatives of ReLU for each of the weighted inputs to each neuron in last layer
         Matrix d3 = hadamard_product(cost_pd, sigma_prime_z);
         
         free_mat(cost_pd);
@@ -412,14 +412,14 @@ void train_batch(
     for (unsigned int i = 1; i < BATCH_SIZE; i++) {
         if (start_idx + i >= num_examples) {
             break;
-        } 
+        }
 
         if (start_idx + i >= 60000) {
             printf("start_idx + i (%u) is greater than 60000\n", start_idx + i);
             break;
         }
+
         Matrix a0_t = transpose(training_inputs[start_idx + i]);
-        
         Matrix pd1 = mat_mul(batch_d1[i], a0_t);
         mat_add_mut(&w_pds1, pd1);
         free_mat(pd1);
