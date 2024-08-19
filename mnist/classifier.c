@@ -12,8 +12,8 @@ const unsigned int H2_LEN = 128;
 const unsigned int OUT_LAYER_LEN = 10; 
 
 const unsigned int BATCH_SIZE = 32;
-const unsigned int EPOCHS = 20;
-const float LEARNING_RATE = 0.05;
+const unsigned int EPOCHS = 1;
+const float LEARNING_RATE = 0.02;
 
 // Matrix math 
 typedef struct {
@@ -141,9 +141,7 @@ Matrix mat_add(Matrix a, Matrix b) {
     if (a.rows != b.rows || a.cols != b.cols) {
         printf("Matrix a dimensions: %u rows, %u cols\n", a.rows, a.cols);
         printf("Matrix b dimensions: %u rows, %u cols\n", b.rows, b.cols);
-        // fprintf(stderr, "Error: Both matrices must have identical dimensions for matrix addition.\n");
-        // exit(EXIT_FAILURE);
-        assert(0 && "Error: Both matrices must have identical dimensions for matrix addition.\n");
+        assert(a.rows == b.rows && a.cols == b.cols);
     }
 
     Matrix result = alloc_mat(a.rows, a.cols);
@@ -159,9 +157,11 @@ Matrix mat_add(Matrix a, Matrix b) {
 }
 
 void mat_add_mut(Matrix *a, Matrix b) {
+    
     if (a->rows != b.rows || a->cols != b.cols) {
-        fprintf(stderr, "Error: Both matrices must have identical dimensions for in-place matrix addition.\n");
-        exit(EXIT_FAILURE);
+        printf("Matrix a dimensions: %u rows, %u cols\n", a->rows, a->cols);
+        printf("Matrix b dimensions: %u rows, %u cols\n", b.rows, b.cols);
+        assert(a->rows == b.rows && a->cols == b.cols);
     }
 
     for (unsigned int i = 0; i < a->rows; i++) {
@@ -230,11 +230,13 @@ void print_matrix(Matrix m) {
 
 float sigmoid(float x) {
     return 1.0 / (1.0 + exp(-x));
+    // return x <= 0 ? 0 : x;
 }
 
 float sigmoid_prime(float x) {
     float s = sigmoid(x);
     return s * (1 - s);
+    // return x <= 0 ? 0 : 1;
 }
 
 Matrix elementwise_sigmoid(Matrix vec) {
@@ -273,7 +275,6 @@ Matrix elementwise_sigmoid_prime(Matrix vec) {
 }
 
 // Cost function
-
 float mse(Matrix predicted, Matrix actual) {
     if (predicted.rows != actual.rows || predicted.cols != actual.cols || predicted.cols != 1) {
         fprintf(stderr, "Error: Vector dimensions must match for mean squared error calculation.\n");
@@ -290,7 +291,7 @@ float mse(Matrix predicted, Matrix actual) {
     }
     unsigned int total_elements = error.rows;
 
-    return sum / 2;
+    return sum / (total_elements * 2);
 }
 
 // input expected to be a 784x1 matrix
@@ -409,8 +410,16 @@ void train_batch(
     
     // Updating weights
     for (unsigned int i = 1; i < BATCH_SIZE; i++) {
-  
+        if (start_idx + i >= num_examples) {
+            break;
+        } 
+
+        if (start_idx + i >= 60000) {
+            printf("start_idx + i (%u) is greater than 60000\n", start_idx + i);
+            break;
+        }
         Matrix a0_t = transpose(training_inputs[start_idx + i]);
+        
         Matrix pd1 = mat_mul(batch_d1[i], a0_t);
         mat_add_mut(&w_pds1, pd1);
         free_mat(pd1);
@@ -449,6 +458,10 @@ void train_batch(
     Matrix b_pds3 = batch_d3[0];
 
     for (unsigned int i = 1; i < BATCH_SIZE; i++) {
+        if (start_idx + i >= num_examples) {
+            break;
+        } 
+
         mat_add_mut(&b_pds1, batch_d1[i]);
         mat_add_mut(&b_pds2, batch_d2[i]);
         mat_add_mut(&b_pds3, batch_d3[i]);
@@ -464,6 +477,10 @@ void train_batch(
 
     // Free batch_d1, batch_d2, batch_d3, batch_a1, batch_a2, batch_a3
     for (unsigned int i = 0; i < BATCH_SIZE; i++) {
+        if (start_idx + i >= num_examples) {
+            break;
+        } 
+
         free_mat(batch_d1[i]);
         free_mat(batch_d2[i]);
         free_mat(batch_d3[i]);
@@ -522,10 +539,69 @@ void load_mnist_data(char *filename, Matrix **outputs, Matrix **inputs, unsigned
             idx++;
             token = strtok(NULL, ",");
         }
+
         (*inputs)[i] = input;
+
     }
 
     fclose(file);
+}
+
+float test_model(Matrix w1, Matrix b1, Matrix w2, Matrix b2, Matrix w3, Matrix b3) {
+    unsigned int num_examples;
+    Matrix *outputs, *inputs;
+    load_mnist_data("mnist_test.txt", &outputs, &inputs, &num_examples);
+
+    num_examples = 10000;
+    unsigned int correct_guesses = 0;
+    for (unsigned int i = 0; i < num_examples; i++) {
+        Matrix input = inputs[i];
+        Matrix expected_output = outputs[i];
+
+        Matrix z1, a1, z2, a2, z3, a3;
+
+        feed_forward(input, w1, b1, w2, b2, w3, b3, &z1, &z2, &z3, &a1, &a2, &a3);
+
+        unsigned int predicted_label = 0;
+        float max_activation = unchecked_index(&a3, 0, 0);
+        for (unsigned int j = 1; j < a3.rows; j++) {
+            float activation = unchecked_index(&a3, j, 0);
+            if (activation > max_activation) {
+                max_activation = activation;
+                predicted_label = j;
+            }
+        }
+
+        unsigned int expected_label = 0;
+        float expected_value = unchecked_index(&expected_output, 0, 0);
+        for (unsigned int j = 1; j < expected_output.rows; j++) {
+            float value = unchecked_index(&expected_output, j, 0);
+            if (value > expected_value) {
+                expected_value = value;
+                expected_label = j;
+            }
+        }
+
+        if (predicted_label == expected_label) {
+            correct_guesses++;
+        }
+
+        free_mat(z1);
+        free_mat(a1);
+        free_mat(z2);
+        free_mat(a2);
+        free_mat(z3);
+        free_mat(a3);
+    }
+
+    for (unsigned int i = 0; i < num_examples; i++) {
+        free_mat(inputs[i]);
+        free_mat(outputs[i]);
+    }
+    free(inputs);
+    free(outputs);
+
+    return (float)correct_guesses / num_examples;
 }
 
 
@@ -555,6 +631,10 @@ int main() {
         }
         start_idx = 0;
     }
+
+    // Test the model
+    float accuracy = test_model(w1, b1, w2, b2, w3, b3);
+    printf("Test accuracy: %.2f%%\n", accuracy * 100);
 
     return 0;
 }
