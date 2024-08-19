@@ -12,7 +12,7 @@ const unsigned int H2_LEN = 128;
 const unsigned int OUT_LAYER_LEN = 10; 
 
 const unsigned int BATCH_SIZE = 32;
-const unsigned int EPOCHS = 2;
+const unsigned int EPOCHS = 2; // Achieves ~86-90% accuracy after 1 epoch, ~92% after 2 epochs. Beyond that it likely begins to overfit
 const float LEARNING_RATE = 0.02;
 
 // Matrix math 
@@ -54,18 +54,6 @@ static inline void unchecked_set_value(Matrix *m, unsigned int row, unsigned int
     }
 }
 
-// Note: assumes a has same number of rows as b has columns
-// Calculates the dot product of a row in matrix a with a column in matrix b
-float mat_dprod(Matrix a, unsigned int row, Matrix b, unsigned int col) {
-    float sum = 0.0;
-
-    for (unsigned int i = 0; i < a.cols; i++) {
-        sum += unchecked_index(&a, row, i) * unchecked_index(&b, i, col);
-    }
-
-    return sum;
-}
-
 Matrix hadamard_product(Matrix a, Matrix b) {
     if (a.rows != b.rows || a.cols != 1 || b.cols != 1) {
         fprintf(stderr, "Error: Matrices must be vectors of the same length\n");
@@ -85,15 +73,19 @@ Matrix hadamard_product(Matrix a, Matrix b) {
 
 Matrix mat_mul(Matrix a, Matrix b) {
     if (a.cols != b.rows) {
-        Matrix zero_matrix = {NULL, 0, 0};
-        return zero_matrix;
+        fprintf(stderr, "Error: Matrices have incompatible dimensions for multiplication\n");
+        exit(EXIT_FAILURE);
     }
 
     Matrix prod = alloc_mat(a.rows, b.cols);
 
     for (unsigned int i = 0; i < a.rows; i++) {
         for (unsigned j = 0; j < b.cols; j++) {
-            unchecked_set_value(&prod, i, j, mat_dprod(a, i, b, j));
+            float sum = 0;
+            for (unsigned int k = 0; k < a.cols; k++) {
+                sum += unchecked_index(&a, i, k) * unchecked_index(&b, k, j);
+            }
+            unchecked_set_value(&prod, i, j, sum);
         }
     }
 
@@ -119,7 +111,7 @@ Matrix rand_matrix(unsigned int rows, unsigned int cols) {
 
     for (unsigned int i = 0; i < rows; i++) {
         for (unsigned int j = 0; j < cols; j++) {
-            float random_value = ((float)rand() / RAND_MAX) * 0.2 - 0.1; // Generate random value between -0.01 and 0.01
+            float random_value = ((float)rand() / RAND_MAX) * 0.2 - 0.1; // Generate random value between -0.1 and 0.1
             unchecked_set_value(&mat, i, j, random_value);
         }
     }
@@ -215,27 +207,13 @@ void scale_mat(Matrix *m, float scalar) {
     }
 }
 
-
-void print_matrix(Matrix m) {
-    for (unsigned int i = 0; i < m.rows; i++) {
-        for (unsigned int j = 0; j < m.cols; j++) {
-            printf("(%u, %u) ", i, j);
-            printf("%f ", m.data[i * m.cols + j]);
-        }
-        printf("\n");
-    }
-}
-
 // Activation functions
 
 float relu(float x) {
-    // return 1.0 / (1.0 + exp(-x));
     return x <= 0 ? 0 : x;
 }
 
 float relu_prime(float x) {
-    // float s = sigmoid(x);
-    // return s * (1 - s);
     return x <= 0 ? 0 : 1;
 }
 
@@ -289,8 +267,6 @@ float mse(Matrix predicted, Matrix actual) {
         sum += err_value * err_value;
     }
     
-    //unsigned int total_elements = error.rows;
-
     return sum / 2;
 }
 
